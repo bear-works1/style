@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#FBEFEF" />
+<title>STYLE — your closet, styled by AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Nunito+Sans:wght@400;500;600;700;800&display=swap');
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #FBEFEF; }
+  #root { min-height: 100vh; }
+  button { font-family: inherit; cursor: pointer; }
+  input { font-family: inherit; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #F0D4DA; border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .st-pill { padding: 7px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: .2px; transition: transform .12s ease, background .15s ease; white-space: nowrap; }
+  .st-pill:hover { transform: translateY(-1px); }
+  .st-pill:focus-visible, .st-seg:focus-visible, .st-primary:focus-visible, .st-ghost:focus-visible, .st-tile:focus-visible, .st-nav:focus-visible { outline: 2px solid #B06E7B; outline-offset: 2px; }
+  .st-primary { transition: transform .12s ease, filter .15s ease; }
+  .st-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
+  .st-primary:active { transform: translateY(0); }
+  .st-primary:disabled { opacity: .6; cursor: default; }
+  .st-ghost { transition: background .15s ease, transform .12s ease; }
+  .st-ghost:hover { background: #FBE7EC; }
+  .st-tile { transition: transform .14s ease, box-shadow .18s ease; }
+  .st-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(176,110,123,.16); }
+  .st-seg { transition: background .18s ease; }
+  .st-nav { background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 8px; flex: 1; transition: transform .12s ease; }
+  .st-nav:active { transform: scale(.94); }
+  .st-loading { font-family: 'Fraunces', serif; color: #B06E7B; letter-spacing: 8px; font-size: 30px; font-weight: 400; display:flex; align-items:center; justify-content:center; height:100vh; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="root"><div class="st-loading">STYLE</div></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+/*
+  STYLE — your closet + an AI stylist that dresses you from clothes you already own.
+  Standalone single-file HTML app. Data persists across reloads via localStorage.
+
+  WHERE TO PLUG IN REAL AI / APIs (search for these tags):
+    [[ VISION_AI: BACKGROUND_REMOVAL ]]    -> replace simulated bg-removal on item upload
+    [[ VISION_AI: ITEM_CATEGORIZATION ]]   -> replace keyword guess with a real vision model
+    [[ VISION_AI: SKIN_UNDERTONE ]]        -> replace the pixel-average heuristic
+    [[ VISION_AI: VIRTUAL_TRY_ON ]]        -> replace the overlay placeholder with real try-on
+    [[ AI: OUTFIT_GENERATION ]]            -> replace the ranking heuristic
+    [[ AI: STYLIST_CHAT ]]                 -> replace the rule-based stylist with a real model
+    [[ API: WEATHER ]]                     -> replace simulated weather with a live weather API
+    [[ INTEGRATION: ONLINE_PURCHASES ]]    -> replace mock orders with a real retailer/email import
+*/
+
+/* ----------------------------------------------------------------------- */
+/* THEME                                                                     */
+/* ----------------------------------------------------------------------- */
+const T = {
+  bg: "#FBEFEF", bgDeep: "#F4DCE0", card: "#FFFAFB", cream: "#FBE7EA",
+  pink: "#E1AAB2", pinkSoft: "#F3D8DD", pinkWash: "#FBE7EC", pinkDeep: "#B06E7B",
+  rose: "#9A5965", brown: "#9C8472", brownDeep: "#6E5848", taupe: "#C9B3A6",
+  text: "#3E322E", textSoft: "#8E776F", line: "#EFD7DC",
+  clean: "#7E9A85", wash: "#BE8AA0", gold: "#BC9560",
+};
+
+const CATEGORIES = [
+  { id: "tops", label: "Tops", icon: "👚" },
+  { id: "bottoms", label: "Bottoms", icon: "👖" },
+  { id: "dresses", label: "Dresses", icon: "👗" },
+  { id: "shoes", label: "Shoes", icon: "👠" },
+  { id: "bags", label: "Bags", icon: "👜" },
+  { id: "accessories", label: "Accessories", icon: "🧣" },
+];
+const catIcon = (id) => (CATEGORIES.find((c) => c.id === id) || {}).icon || "🧷";
+const catLabel = (id) => (CATEGORIES.find((c) => c.id === id) || {}).label || id;
+const CAT_KIND = { tops: "tee", bottoms: "trousers", dresses: "dress", shoes: "loafer", bags: "tote", accessories: "hoops" };
+
+const AESTHETICS = ["minimal", "classic", "cozy", "streetwear", "coquette"];
+const COLOR_FAMILIES = ["neutrals", "pastels", "earth tones", "brights", "all black"];
+const OCCASIONS = ["casual", "work", "date", "gym", "night out"];
+
+const CITIES = [
+  { name: "Los Angeles", base: 74, mood: "sunny" },
+  { name: "New York", base: 58, mood: "cloudy" },
+  { name: "London", base: 52, mood: "rainy" },
+  { name: "Paris", base: 56, mood: "cloudy" },
+  { name: "Tokyo", base: 64, mood: "clear" },
+  { name: "Miami", base: 84, mood: "humid" },
+  { name: "Chicago", base: 44, mood: "windy" },
+  { name: "Seattle", base: 50, mood: "rainy" },
+];
+
+const COLOR_META = {
+  white: { hex: "#F2EEE8", families: ["neutrals"] },
+  cream: { hex: "#EFE6D6", families: ["neutrals", "earth tones"] },
+  beige: { hex: "#D9C5A8", families: ["neutrals", "earth tones"] },
+  tan: { hex: "#C9A983", families: ["earth tones", "neutrals"] },
+  camel: { hex: "#C39A6B", families: ["earth tones"] },
+  brown: { hex: "#A9876E", families: ["earth tones"] },
+  olive: { hex: "#8A8B5B", families: ["earth tones"] },
+  black: { hex: "#2B2622", families: ["all black", "neutrals"] },
+  gray: { hex: "#9C9690", families: ["neutrals"] },
+  denim: { hex: "#5B7C99", families: ["neutrals"] },
+  blush: { hex: "#F2C6CC", families: ["pastels"] },
+  pink: { hex: "#EBA8B6", families: ["pastels"] },
+  rose: { hex: "#D98C9C", families: ["pastels", "brights"] },
+  lilac: { hex: "#C9B6DC", families: ["pastels"] },
+  red: { hex: "#C0504A", families: ["brights"] },
+  gold: { hex: "#D9B86B", families: ["brights", "neutrals"] },
+};
+const colorHex = (c) => (COLOR_META[c] || { hex: "#D9C5C0" }).hex;
+const colorFamilies = (c) => (COLOR_META[c] || { families: ["neutrals"] }).families;
+
+/* ----------------------------------------------------------------------- */
+/* SEED DATA                                                                 */
+/* ----------------------------------------------------------------------- */
+let _id = 0;
+const nid = () => `${Date.now().toString(36)}${(_id++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+const seedItem = (name, category, color, aesthetics, warmth, occasions) => ({
+  id: nid(), name, category, color, aesthetics, warmth, occasions,
+  clean: true, image: null, source: "starter",
+});
+
+const seedCloset = () => [
+  seedItem("Cropped tee", "tops", "white", ["minimal", "classic"], 1, ["casual", "gym"]),
+  seedItem("Silk blouse", "tops", "blush", ["classic", "coquette"], 1, ["work", "date"]),
+  seedItem("Oversized hoodie", "tops", "brown", ["cozy", "streetwear"], 3, ["casual", "gym"]),
+  seedItem("Ribbed knit", "tops", "cream", ["cozy", "classic"], 2, ["casual", "work"]),
+  seedItem("Black turtleneck", "tops", "black", ["minimal", "classic"], 2, ["work", "night out"]),
+  seedItem("High-waist jeans", "bottoms", "denim", ["classic", "streetwear"], 2, ["casual"]),
+  seedItem("Tailored trousers", "bottoms", "beige", ["classic", "minimal"], 2, ["work"]),
+  seedItem("Pleated mini skirt", "bottoms", "pink", ["coquette"], 1, ["date", "casual"]),
+  seedItem("Bike shorts", "bottoms", "black", ["streetwear"], 1, ["gym"]),
+  seedItem("Wide-leg pants", "bottoms", "black", ["minimal", "classic"], 2, ["work", "night out"]),
+  seedItem("Slip dress", "dresses", "rose", ["coquette", "classic"], 1, ["date", "night out"]),
+  seedItem("Wrap midi dress", "dresses", "olive", ["classic"], 2, ["work", "date"]),
+  seedItem("White sneakers", "shoes", "white", ["minimal", "streetwear"], 2, ["casual", "gym"]),
+  seedItem("Ballet flats", "shoes", "pink", ["coquette", "classic"], 1, ["date", "work"]),
+  seedItem("Ankle boots", "shoes", "brown", ["classic", "streetwear"], 3, ["casual", "work"]),
+  seedItem("Strappy heels", "shoes", "black", ["classic"], 1, ["night out", "date"]),
+  seedItem("Tote bag", "bags", "tan", ["minimal", "classic"], 2, ["work", "casual"]),
+  seedItem("Mini shoulder bag", "bags", "blush", ["coquette"], 2, ["date", "night out"]),
+  seedItem("Gold hoops", "accessories", "gold", ["classic"], 2, ["date", "night out", "work"]),
+  seedItem("Wool scarf", "accessories", "camel", ["cozy"], 3, ["casual"]),
+];
+
+const DEFAULT_STATE = () => ({
+  onboarded: false,
+  profile: {
+    name: "", photo: null, bodyPhoto: null, undertone: null,
+    aesthetics: ["classic", "minimal"], colorFamilies: ["neutrals", "pastels"],
+    occasion: "casual", city: "Los Angeles",
+  },
+  closet: seedCloset(),
+  saved: [], worn: [], celebPhotos: {},
+  chat: [{ role: "stylist", text: "Hi! I'm your stylist. Ask me what goes with a piece, an outfit for an occasion, how to make a look warmer, or what's clean. I only suggest clothes you actually own." }],
+});
+
+/* ----------------------------------------------------------------------- */
+/* PERSISTENCE (localStorage — survives reloads)                             */
+/* ----------------------------------------------------------------------- */
+const STORE_KEY = "style-app-v1";
+function loadData() {
+  try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch (e) { return null; }
+}
+function persist(data) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) { /* quota / private mode */ }
+}
+
+/* ----------------------------------------------------------------------- */
+/* CLAUDE VISION BACKEND  (Supabase edge function: style-vision)             */
+/* ----------------------------------------------------------------------- */
+/* The Anthropic API key lives ONLY on the server, as the Supabase secret
+   ANTHROPIC_API_KEY_STYLE. The publishable anon key below is safe to ship in
+   the browser. If the backend is unreachable or the key isn't set yet, every
+   caller falls back to the local heuristic, so the app keeps working. */
+const STYLE_API = {
+  url: "https://tboihgqcnqlatzyhtlpu.supabase.co/functions/v1/style-vision",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRib2loZ3FjbnFsYXR6eWh0bHB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMzg0NzgsImV4cCI6MjA5NzkxNDQ3OH0.vGE6r3An_KDOJfk1U88PTN1MrXYwTDMk3oJghWmY84A",
+};
+async function visionClassify(mode, dataURL) {
+  if (!STYLE_API.url || !STYLE_API.anonKey || !dataURL) return null;
+  try {
+    const res = await fetch(STYLE_API.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${STYLE_API.anonKey}`, "apikey": STYLE_API.anonKey },
+      body: JSON.stringify({ mode, image: dataURL }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j && j.ok ? j.result : null;
+  } catch (_) { return null; }
+}
+
+/* ----------------------------------------------------------------------- */
+/* IMAGE + AI SIMULATIONS                                                    */
+/* ----------------------------------------------------------------------- */
+function fileToScaledDataURL(file, max = 380, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        // [[ VISION_AI: BACKGROUND_REMOVAL ]]  plug a real segmentation model here.
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function guessCategory(name = "") {
+  // [[ VISION_AI: ITEM_CATEGORIZATION ]]  replace this keyword guess with a real classifier.
+  const n = name.toLowerCase();
+  const map = {
+    dresses: ["dress", "gown", "frock"],
+    shoes: ["shoe", "sneaker", "heel", "boot", "flat", "sandal", "loafer"],
+    bags: ["bag", "tote", "purse", "clutch", "backpack"],
+    accessories: ["scarf", "hat", "belt", "earring", "necklace", "hoop", "sunglass", "glove"],
+    bottoms: ["jean", "pant", "trouser", "skirt", "short", "legging"],
+    tops: ["top", "tee", "shirt", "blouse", "hoodie", "sweater", "knit", "tank", "turtleneck"],
+  };
+  for (const cat of Object.keys(map)) if (map[cat].some((k) => n.includes(k))) return cat;
+  return "tops";
+}
+function guessColor(name = "") {
+  const n = name.toLowerCase();
+  for (const c of Object.keys(COLOR_META)) if (n.includes(c)) return c;
+  return "blush";
+}
+
+function analyzeUndertone(dataURL) {
+  return new Promise((resolve) => {
+    // [[ VISION_AI: SKIN_UNDERTONE ]]  we sample average warmth then DISCARD the image.
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = 40; c.height = 40;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 40, 40);
+      const d = ctx.getImageData(0, 0, 40, 40).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      r /= n; g /= n; b /= n;
+      const warmth = r - b;
+      resolve(warmth > 22 ? "warm" : warmth < 6 ? "cool" : "neutral"); // image never stored
+    };
+    img.onerror = () => resolve("neutral");
+    img.src = dataURL;
+  });
+}
+
+/* ----------------------------------------------------------------------- */
+/* WEATHER                                                                   */
+/* ----------------------------------------------------------------------- */
+function getWeather(city) {
+  // [[ API: WEATHER ]]  swap for a live call (Open-Meteo / OpenWeather) keyed on the city.
+  const c = CITIES.find((x) => x.name === city) || CITIES[0];
+  const day = Math.floor(Date.now() / 86400000);
+  const wiggle = ((day * 7 + c.name.length * 3) % 11) - 5;
+  const tempF = Math.max(28, Math.min(98, c.base + wiggle));
+  const icon = { sunny: "☀️", clear: "🌤️", cloudy: "☁️", rainy: "🌧️", humid: "🌥️", windy: "🌬️" }[c.mood] || "🌤️";
+  return { tempF, cond: c.mood, icon, city: c.name };
+}
+const tempBand = (f) => (f < 50 ? "cold" : f > 78 ? "hot" : "mild");
+
+/* ----------------------------------------------------------------------- */
+/* OUTFIT ENGINE                                                             */
+/* ----------------------------------------------------------------------- */
+function scoreItem(item, ctx, seed = 0) {
+  // [[ AI: OUTFIT_GENERATION ]]  transparent scoring stands in for a real model.
+  let s = 1;
+  const prof = ctx.profile;
+  if (item.aesthetics.some((a) => prof.aesthetics.includes(a))) s += 2.5;
+  if (colorFamilies(item.color).some((f) => prof.colorFamilies.includes(f))) s += 1.5;
+  if (item.occasions.includes(ctx.occasion)) s += 2.5;
+  const band = tempBand(ctx.weather.tempF);
+  if (band === "cold") s += item.warmth === 3 ? 2 : item.warmth === 2 ? 1 : -1.5;
+  if (band === "hot") s += item.warmth === 1 ? 2 : item.warmth === 2 ? 0.5 : -1.5;
+  if (prof.undertone === "warm" && colorFamilies(item.color).includes("earth tones")) s += 0.6;
+  if (prof.undertone === "cool" && colorFamilies(item.color).some((f) => f === "pastels" || f === "all black")) s += 0.6;
+  s += Math.abs(Math.sin(seed * 999 + item.id.charCodeAt(0))) * 1.4;
+  return s;
+}
+function rank(items, ctx, seed) {
+  return [...items].map((it) => ({ it, s: scoreItem(it, ctx, seed) })).sort((a, b) => b.s - a.s).map((x) => x.it);
+}
+function buildOutfit(closet, ctx, seed = 0) {
+  const clean = closet.filter((i) => i.clean);
+  const by = (cat) => rank(clean.filter((i) => i.category === cat), ctx, seed);
+  const tops = by("tops"), bottoms = by("bottoms"), dresses = by("dresses");
+  const shoes = by("shoes"), bags = by("bags"), accs = by("accessories");
+  const slots = [];
+  const wantDress = dresses.length > 0 && (seed % 3 === 0 || tops.length === 0 || bottoms.length === 0);
+  if (wantDress) slots.push({ slot: "dress", item: dresses[0], options: dresses });
+  else {
+    if (tops[0]) slots.push({ slot: "top", item: tops[0], options: tops });
+    if (bottoms[0]) slots.push({ slot: "bottom", item: bottoms[0], options: bottoms });
+  }
+  if (shoes[0]) slots.push({ slot: "shoes", item: shoes[0], options: shoes });
+  if (bags[0]) slots.push({ slot: "bag", item: bags[0], options: bags });
+  if (accs[0]) slots.push({ slot: "accessory", item: accs[0], options: accs });
+  return slots.filter((s) => s.item);
+}
+
+/* ----------------------------------------------------------------------- */
+/* STYLIST CHAT                                                              */
+/* ----------------------------------------------------------------------- */
+function stylistReply(message, state, ctx, helpers) {
+  // [[ AI: STYLIST_CHAT ]]  replace with a real model constrained to owned items.
+  const m = message.toLowerCase();
+  const closet = state.closet;
+  const clean = closet.filter((i) => i.clean);
+  const named = closet.find((i) => m.includes(i.name.toLowerCase()));
+
+  if (/(what('?s| is)? clean|in the wash|laundry|available)/.test(m)) {
+    const dirty = closet.filter((i) => !i.clean);
+    return { text: `You have ${clean.length} clean pieces ready to wear` +
+      (dirty.length ? `, and ${dirty.length} in the wash (${dirty.map((d) => d.name).join(", ")}).` : ".") +
+      ` Clean right now: ${clean.slice(0, 8).map((c) => c.name).join(", ")}${clean.length > 8 ? "…" : ""}.` };
+  }
+  if (named && /(go(es)? with|pair|match|style|wear with)/.test(m)) {
+    const pool = clean.filter((i) => i.id !== named.id && i.category !== named.category);
+    const picks = rank(pool, ctx, Date.now()).slice(0, 3);
+    return { text: picks.length
+      ? `Your ${named.name} pairs nicely with: ${picks.map((p) => p.name).join(", ")}. That leans ${state.profile.aesthetics[0] || "classic"} and works for ${ctx.occasion}.`
+      : `I'd pair your ${named.name} with more pieces, but everything else is in the wash. Want to mark something clean?` };
+  }
+  const occ = OCCASIONS.find((o) => m.includes(o.split(" ")[0]));
+  if (occ || /(outfit|look|wear|dress me|ootd)/.test(m)) {
+    const outfit = buildOutfit(closet, { ...ctx, occasion: occ || ctx.occasion }, Date.now() % 1000);
+    if (!outfit.length) return { text: "Your closet's looking bare or everything's in the wash — add a few items and I'll style you." };
+    return { text: `For ${occ || ctx.occasion} in ${ctx.weather.tempF}° ${ctx.weather.icon}: ${outfit.map((s) => s.item.name).join(" + ")}. Tap below to load it on the Outfit screen.`, outfit };
+  }
+  if (/(warmer|cold|colder|warm|cozy|layer)/.test(m)) {
+    const warm = rank(clean.filter((i) => i.warmth >= 2), ctx, Date.now()).slice(0, 3);
+    return { text: warm.length ? `To warm a look up, layer in: ${warm.map((w) => w.name).join(", ")}.` : "You don't have warmer layers clean right now." };
+  }
+  if (/(save|go-to|favorite|favourite|remember this)/.test(m)) {
+    if (helpers && helpers.lastOutfit && helpers.lastOutfit.length) { helpers.saveOutfit(helpers.lastOutfit); return { text: "Saved that as a go-to look — find it under Outfit of the Day → Saved." }; }
+    return { text: "Open the Outfit screen, generate a look you like, then ask me to save it." };
+  }
+  return { text: `I can build an outfit for an occasion, tell you what pairs with a piece, make a look warmer, check what's clean, or save a go-to. You've got ${clean.length} clean items to work with.` };
+}
+
+/* ----------------------------------------------------------------------- */
+/* INSPIRATION + CELEBRITY LOOKS                                             */
+/* ----------------------------------------------------------------------- */
+const LOOKS = [
+  { id: "oldmoney", name: "Old Money Heiress", celeb: false, vibe: "Quiet luxury, tailored neutrals", grad: ["#E9D9C5", "#C9A983"], aesthetics: ["classic", "minimal"], families: ["neutrals", "earth tones"], need: ["tops", "bottoms", "shoes", "bags"], pieces: [{ kind: "blazer", color: "#D9C5A8" }, { kind: "trousers", color: "#C9A983" }, { kind: "loafer", color: "#A9876E" }, { kind: "tote", color: "#C9A983" }] },
+  { id: "coquette", name: "Coquette Spring", celeb: false, vibe: "Soft pastels, bows, ballet", grad: ["#F5D6DA", "#EBA8B6"], aesthetics: ["coquette"], families: ["pastels"], need: ["tops", "bottoms", "shoes", "accessories"], pieces: [{ kind: "tee", color: "#EBA8B6" }, { kind: "skirt", color: "#F2C6CC" }, { kind: "heel", color: "#D98C9C" }, { kind: "hoops", color: "#D9B86B" }] },
+  { id: "street", name: "Streetwear Muse", celeb: false, vibe: "Relaxed, sporty, easy", grad: ["#C9B4A4", "#7C5E4E"], aesthetics: ["streetwear"], families: ["neutrals", "brights"], need: ["tops", "bottoms", "shoes", "bags"], pieces: [{ kind: "tee", color: "#F2EEE8" }, { kind: "jeans", color: "#5B7C99" }, { kind: "sneaker", color: "#F2EEE8" }, { kind: "tote", color: "#A9876E" }] },
+  { id: "minimal", name: "Minimal Off-Duty", celeb: false, vibe: "Sleek, monochrome, sharp", grad: ["#D8CFC8", "#2B2622"], aesthetics: ["minimal"], families: ["all black", "neutrals"], need: ["tops", "bottoms", "shoes"], pieces: [{ kind: "tee", color: "#2B2622" }, { kind: "trousers", color: "#2B2622" }, { kind: "loafer", color: "#2B2622" }] },
+  // Real celebrities — documented signature styles. Outfits shown as original illustrations
+  // (no copyrighted photos); a "View photos" link opens real image results at the source.
+  { id: "zendaya", name: "Zendaya", celeb: true, vibe: "Monochrome power tailoring", desc: "Her off-duty formula: a black-and-white suit (or a tee with straight-leg trousers), sleek loafers, and an oversized tote. Minimalist by day, drama on the carpet.", grad: ["#D8CFC8", "#2B2622"], aesthetics: ["minimal", "classic"], families: ["all black", "neutrals"], need: ["tops", "bottoms", "shoes", "bags"], pieces: [{ kind: "blazer", color: "#2B2622" }, { kind: "trousers", color: "#EFE6D6" }, { kind: "loafer", color: "#2B2622" }, { kind: "tote", color: "#C9A983" }] },
+  { id: "hailey", name: "Hailey Bieber", celeb: true, vibe: "Luxe basics, off-duty model", desc: "A double-breasted power-shoulder blazer over a simple top with a mini skirt or straight trousers, finished with chunky sneakers and white socks. All neutrals.", grad: ["#E9DCCB", "#C9A983"], aesthetics: ["minimal", "classic", "streetwear"], families: ["neutrals"], need: ["tops", "bottoms", "shoes", "bags"], pieces: [{ kind: "blazer", color: "#C39A6B" }, { kind: "tee", color: "#F2EEE8" }, { kind: "skirt", color: "#D9C5A8" }, { kind: "sneaker", color: "#F2EEE8" }] },
+  { id: "rihanna", name: "Rihanna", celeb: true, vibe: "High-fashion street", desc: "Luxury worn like streetwear: an oversized blazer or statement top with relaxed denim and loafers, plus a bold bag. Genre-bending and effortless.", grad: ["#6E5A52", "#C0504A"], aesthetics: ["streetwear", "classic"], families: ["neutrals", "brights"], need: ["tops", "bottoms", "shoes", "bags"], pieces: [{ kind: "blazer", color: "#6E4A42" }, { kind: "tee", color: "#F2EEE8" }, { kind: "jeans", color: "#5B7C99" }, { kind: "loafer", color: "#A9876E" }, { kind: "tote", color: "#C0504A" }] },
+  { id: "timothee", name: "Timothée Chalamet", celeb: true, vibe: "Gender-fluid tailoring", desc: "High-fashion tailoring with a streetwear edge — a bold or pastel jacket over basics, relaxed trousers, fresh sneakers, and a little delicate jewelry.", grad: ["#E6D27A", "#C9B6DC"], aesthetics: ["classic", "streetwear", "minimal"], families: ["brights", "pastels", "neutrals"], need: ["tops", "bottoms", "shoes", "accessories"], pieces: [{ kind: "blazer", color: "#E6CE6A" }, { kind: "tee", color: "#F2EEE8" }, { kind: "trousers", color: "#2B2622" }, { kind: "sneaker", color: "#F2EEE8" }, { kind: "hoops", color: "#D9B86B" }] },
+  { id: "taylor", name: "Taylor Swift", celeb: true, vibe: "Romantic statement", desc: "Gala-ready romance: a statement dress with sparkling accessories and elegant heels — polished and feminine, built for a moment.", grad: ["#F5D6DA", "#D98C9C"], aesthetics: ["classic", "coquette"], families: ["pastels", "brights"], need: ["dresses", "shoes", "bags", "accessories"], pieces: [{ kind: "dress", color: "#EBA8B6" }, { kind: "heel", color: "#D98C9C" }, { kind: "tote", color: "#F2C6CC" }, { kind: "hoops", color: "#D9B86B" }] },
+  { id: "bella", name: "Bella Hadid", celeb: true, vibe: "'90s street revival", desc: "Y2K/'90s revival: a slim fitted top, low-slung or relaxed denim, easy sneakers, and micro sunglasses. Cool, sporty, undone.", grad: ["#B8AFA6", "#2B2622"], aesthetics: ["streetwear", "minimal"], families: ["neutrals", "all black"], need: ["tops", "bottoms", "shoes", "accessories"], pieces: [{ kind: "tee", color: "#2B2622" }, { kind: "jeans", color: "#5B7C99" }, { kind: "sneaker", color: "#F2EEE8" }, { kind: "sunglasses", color: "#2B2622" }] },
+];
+function recreate(look, closet) {
+  const clean = closet.filter((i) => i.clean);
+  const chosen = []; let filled = 0;
+  for (const cat of look.need) {
+    const pool = clean.filter((i) => i.category === cat);
+    const matchBoth = pool.find((i) => i.aesthetics.some((a) => look.aesthetics.includes(a)) && colorFamilies(i.color).some((f) => look.families.includes(f)));
+    const matchOne = pool.find((i) => i.aesthetics.some((a) => look.aesthetics.includes(a)) || colorFamilies(i.color).some((f) => look.families.includes(f)));
+    const pick = matchBoth || matchOne || pool[0];
+    if (pick) { chosen.push(pick); filled++; } else chosen.push({ missing: true, category: cat });
+  }
+  return { chosen, pct: Math.round((filled / look.need.length) * 100), missing: look.need.length - filled };
+}
+
+/* ----------------------------------------------------------------------- */
+/* UI PRIMITIVES                                                             */
+/* ----------------------------------------------------------------------- */
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) + amt, g = ((n >> 8) & 255) + amt, b = (n & 255) + amt;
+  r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+// Minimal line-icon set (replaces emoji for a more editorial feel)
+function Icon({ name, size = 20 }) {
+  const a = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" };
+  const P = {
+    home: <path d="M3 11.3 11 4.3a1.5 1.5 0 0 1 2 0l8 7M5.5 9.8V19a1 1 0 0 0 1 1H17.5a1 1 0 0 0 1-1V9.8" />,
+    closet: <g><rect x="4.5" y="3.5" width="15" height="17" rx="1.5" /><path d="M12 3.6v16.9M9.4 11.6h.01M14.6 11.6h.01" /></g>,
+    hanger: <path d="M12 4.2a1.8 1.8 0 1 0-1.4.7M12 5.8c0 1.2 1 1.7 2.1 2.4l6.4 4a1 1 0 0 1-.5 1.8H4a1 1 0 0 1-.5-1.8l6.4-4" />,
+    mirror: <g><ellipse cx="12" cy="10" rx="6" ry="7.3" /><path d="M9 20.3h6M12 17.3v3" /></g>,
+    user: <g><circle cx="12" cy="8" r="3.6" /><path d="M5.6 20c.6-3.7 3.3-5.5 6.4-5.5s5.8 1.8 6.4 5.5" /></g>,
+    chat: <path d="M5 5.6h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10l-4 3.1V6.6a1 1 0 0 1 1-1Z" />,
+    image: <g><rect x="4" y="5" width="16" height="14" rx="1.6" /><circle cx="9" cy="10" r="1.6" /><path d="M5 17l4.5-4 3 2.5L16 11l3 3.4" /></g>,
+    star: <path d="M12 4l2.3 5.1 5.5.5-4.1 3.6 1.2 5.4L12 16.9 7.1 19.3l1.2-5.4L4.2 10.1l5.5-.5z" />,
+    sun: <g><circle cx="12" cy="12" r="3.8" /><path d="M12 3.2v2M12 18.8v2M3.2 12h2M18.8 12h2M5.8 5.8l1.4 1.4M16.8 16.8l1.4 1.4M18.2 5.8l-1.4 1.4M7.2 16.8l-1.4 1.4" /></g>,
+    camera: <g><path d="M4 8.6h3l1.3-2h7.4L17 8.6h3a1 1 0 0 1 1 1v7.8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.6a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13" r="3.1" /></g>,
+    plus: <path d="M12 5.5v13M5.5 12h13" />,
+  };
+  return <svg {...a}>{P[name] || P.star}</svg>;
+}
+
+function Swatch({ item, size = 64, radius = 16 }) {
+  const fluid = typeof size === "string";
+  const box = fluid ? { width: "100%", aspectRatio: "1 / 1" } : { width: size, height: size, flex: "0 0 auto" };
+  if (item && item.image) {
+    return (
+      <div style={{ ...box, borderRadius: radius, overflow: "hidden", background: T.pinkWash }}>
+        <img src={item.image} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </div>
+    );
+  }
+  const hex = item ? colorHex(item.color) : T.taupe;
+  const kind = item ? (CAT_KIND[item.category] || "tee") : null;
+  const gsize = fluid ? "74%" : Math.round(size * 0.74);
+  return (
+    <div style={{ ...box, borderRadius: radius, background: T.cream, border: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      {item ? <GarmentSVG kind={kind} color={hex} size={gsize} /> : <div style={{ width: "40%", height: "40%", borderRadius: "50%", background: T.pinkSoft }} />}
+    </div>
+  );
+}
+const Pill = ({ active, children, onClick }) => (
+  <button onClick={onClick} className="st-pill" style={{ background: active ? T.pinkDeep : T.card, color: active ? "#fff" : T.text, border: `1px solid ${active ? T.pinkDeep : T.line}` }}>{children}</button>
+);
+
+// Original clothing-silhouette illustrations (used to depict celebrity / inspiration outfits — no photos).
+function GarmentSVG({ kind, color, size = 54 }) {
+  const s = shade(color, -36);
+  const fill = { fill: color, stroke: s, strokeWidth: 3, strokeLinejoin: "round", strokeLinecap: "round" };
+  const line = { fill: "none", stroke: s, strokeWidth: 3, strokeLinecap: "round" };
+  const P = {
+    tee: <path d="M34 22 L45 16 C48 21 52 21 55 16 L66 22 L80 34 L71 44 L66 39 L66 84 L34 84 L34 39 L29 44 L20 34 Z" {...fill} />,
+    blazer: <g><path d="M32 20 L50 30 L68 20 L80 34 L71 45 L66 40 L66 86 L34 86 L34 40 L29 45 L20 34 Z" {...fill} /><path d="M50 30 L41 64 M50 30 L59 64" {...line} /></g>,
+    jeans: <path d="M33 16 L67 16 L64 50 L59 86 L51 86 L50 52 L49 86 L41 86 L36 50 Z" {...fill} />,
+    trousers: <path d="M34 16 L66 16 L63 52 L60 86 L52 86 L50 54 L48 86 L40 86 L37 52 Z" {...fill} />,
+    skirt: <g><path d="M35 26 L65 26 L74 66 L26 66 Z" {...fill} /><path d="M34 27 L66 27" stroke={s} strokeWidth={5} fill="none" strokeLinecap="round" /></g>,
+    dress: <path d="M37 18 L46 14 C49 18 51 18 54 14 L63 18 L59 36 L70 86 L30 86 L41 36 Z" {...fill} />,
+    loafer: <path d="M20 54 C20 49 28 47 40 48 L66 49 C77 49 82 55 82 60 C82 66 74 66 64 66 L30 66 C23 66 20 60 20 54 Z" {...fill} />,
+    heel: <g><path d="M24 52 L58 52 C72 52 80 60 82 70 L78 72 C72 66 60 66 50 66 L28 66 C24 66 22 60 24 52 Z" {...fill} /><path d="M72 66 L80 84 L73 84 Z" {...fill} /></g>,
+    sneaker: <g><path d="M18 60 C18 53 26 50 34 53 L50 58 L66 57 C77 57 83 61 83 67 L83 71 L18 71 Z" {...fill} /><path d="M40 56 L44 64 M50 58 L52 66 M60 57 L60 65" {...line} strokeWidth={2.5} /></g>,
+    tote: <g><path d="M28 40 L72 40 L76 84 L24 84 Z" {...fill} /><path d="M40 40 C40 26 60 26 60 40" {...line} strokeWidth={4} /></g>,
+    sunglasses: <g><rect x="20" y="42" width="26" height="18" rx="9" {...fill} /><rect x="54" y="42" width="26" height="18" rx="9" {...fill} /><path d="M46 49 L54 49 M20 47 L12 43 M80 47 L88 43" {...line} /></g>,
+    hoops: <g><circle cx="38" cy="50" r="13" fill="none" stroke={color} strokeWidth={5} /><circle cx="62" cy="50" r="13" fill="none" stroke={color} strokeWidth={5} /></g>,
+  };
+  return <svg viewBox="0 0 100 100" width={size} height={size} style={{ display: "block" }}>{P[kind] || P.tee}</svg>;
+}
+
+/* ----------------------------------------------------------------------- */
+/* APP                                                                       */
+/* ----------------------------------------------------------------------- */
+function App() {
+  const [state, setState] = useState(() => {
+    const d = loadData();
+    if (d) return { ...DEFAULT_STATE(), ...d, profile: { ...DEFAULT_STATE().profile, ...(d.profile || {}) } };
+    return DEFAULT_STATE();
+  });
+  const [view, setView] = useState("home");
+  const [toast, setToast] = useState(null);
+  const saveTimer = useRef(null);
+  const lastOutfit = useRef([]);
+  const pendingOutfit = useRef(null); // outfit (slot list) the stylist wants the Outfit screen to load
+
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => persist(state), 350);
+  }, [state]);
+
+  const showToast = useCallback((text) => { setToast(text); setTimeout(() => setToast(null), 2200); }, []);
+  const update = useCallback((fn) => setState((s) => fn({ ...s })), []);
+  const setProfile = useCallback((patch) => setState((s) => ({ ...s, profile: { ...s.profile, ...patch } })), []);
+
+  const weather = useMemo(() => getWeather(state.profile.city), [state.profile.city]);
+  const ctx = useMemo(() => ({ profile: state.profile, occasion: state.profile.occasion, weather }), [state.profile, weather]);
+
+  if (!state.onboarded) {
+    return <Onboarding onDone={(name, photo) => update((s) => { s.profile = { ...s.profile, name: name || "you", photo }; s.onboarded = true; return s; })} />;
+  }
+
+  const closetActions = {
+    addItem: (item) => update((s) => { s.closet = [{ ...item, id: nid(), clean: true }, ...s.closet]; return s; }),
+    addMany: (items) => update((s) => { s.closet = [...items.map((i) => ({ ...i, id: nid(), clean: true })), ...s.closet]; return s; }),
+    editItem: (id, patch) => update((s) => { s.closet = s.closet.map((i) => (i.id === id ? { ...i, ...patch } : i)); return s; }),
+    removeItem: (id) => update((s) => { s.closet = s.closet.filter((i) => i.id !== id); return s; }),
+    toggleClean: (id) => update((s) => { s.closet = s.closet.map((i) => (i.id === id ? { ...i, clean: !i.clean } : i)); return s; }),
+  };
+  const saveOutfit = (slots, name) => {
+    const ids = slots.map((s) => s.item.id);
+    update((s) => { s.saved = [{ id: nid(), name: name || `Look ${s.saved.length + 1}`, itemIds: ids, at: Date.now() }, ...s.saved]; return s; });
+    showToast("Saved to your go-to looks");
+  };
+  const markWorn = (slots) => {
+    const ids = slots.map((s) => s.item.id);
+    update((s) => {
+      s.worn = [{ at: Date.now(), itemIds: ids }, ...s.worn].slice(0, 60);
+      s.closet = s.closet.map((i) => (ids.includes(i.id) ? { ...i, clean: false } : i));
+      return s;
+    });
+    showToast("Marked as worn — those pieces moved to the wash");
+  };
+
+  const navItems = [
+    { id: "home", label: "Home", icon: "home" },
+    { id: "closet", label: "Closet", icon: "closet" },
+    { id: "ootd", label: "Outfit", icon: "hanger" },
+    { id: "chat", label: "Stylist", icon: "chat" },
+    { id: "profile", label: "You", icon: "user" },
+  ];
+  const shared = { state, setState, update, setProfile, ctx, weather, showToast, setView, closetActions, saveOutfit, markWorn, lastOutfit, pendingOutfit };
+
+  return (
+    <div style={styles.appWrap}>
+      <div style={styles.phone}>
+        <div style={styles.scrollArea}>
+          {view === "home" && <Home {...shared} />}
+          {view === "add" && <AddItem {...shared} />}
+          {view === "closet" && <Closet {...shared} />}
+          {view === "ootd" && <OutfitOfDay {...shared} />}
+          {view === "tryon" && <TryOn {...shared} />}
+          {view === "profile" && <Profile {...shared} />}
+          {view === "chat" && <Chat {...shared} />}
+          {view === "inspo" && <Inspiration {...shared} celebOnly={false} />}
+          {view === "celeb" && <Inspiration {...shared} celebOnly={true} />}
+          {view === "weather" && <WeatherView {...shared} />}
+        </div>
+        <nav style={styles.nav}>
+          {navItems.map((n) => (
+            <button key={n.id} onClick={() => setView(n.id)} className="st-nav" style={{ color: view === n.id ? T.pinkDeep : T.textSoft }}>
+              <Icon name={n.icon} size={21} />
+              <span style={{ fontSize: 10.5, fontWeight: view === n.id ? 700 : 500, letterSpacing: .2 }}>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+      {toast && <div style={styles.toast}>{toast}</div>}
+    </div>
+  );
+}
+
+/* ONBOARDING */
+function Onboarding({ onDone }) {
+  const [name, setName] = useState("");
+  const [photo, setPhoto] = useState(null);
+  const fileRef = useRef();
+  return (
+    <div style={{ ...styles.appWrap, alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ ...styles.phone, justifyContent: "center", padding: 28, gap: 18 }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "Fraunces, serif", fontSize: 40, letterSpacing: 7, color: T.pinkDeep }}>STYLE</div>
+          <div style={{ color: T.textSoft, marginTop: 4 }}>Your closet, styled by AI.</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          <button onClick={() => fileRef.current.click()} style={{ ...avatarBtn(photo), cursor: "pointer" }} title="Add a photo">{!photo && <span style={{ color: T.brown }}><Icon name="camera" size={28} /></span>}</button>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) setPhoto(await fileToScaledDataURL(f, 240)); }} />
+          <span style={{ fontSize: 12, color: T.textSoft }}>Add a profile photo (optional)</span>
+        </div>
+        <div>
+          <label style={styles.label}>What should I call you?</label>
+          <input style={styles.input} value={name} placeholder="Your name" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onDone(name, photo)} />
+        </div>
+        <button className="st-primary" style={styles.primary} onClick={() => onDone(name, photo)}>Open my closet</button>
+      </div>
+    </div>
+  );
+}
+const avatarBtn = (photo) => ({
+  width: 96, height: 96, borderRadius: "50%", border: `2px solid ${T.pink}`,
+  background: photo ? `center/cover url(${photo})` : T.pinkWash,
+  display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
+});
+
+/* HOME */
+function Home({ state, weather, setView, ctx }) {
+  const { profile, closet } = state;
+  const clean = closet.filter((i) => i.clean).length;
+  const preview = closet.slice(0, 8);
+  const tiles = [
+    { id: "add", icon: "camera", title: "Add clothes", sub: "Photo, video, camera roll, orders" },
+    { id: "ootd", icon: "hanger", title: "Outfit of the day", sub: "Built from what you own" },
+    { id: "closet", icon: "closet", title: "My closet", sub: `${closet.length} pieces · ${clean} clean` },
+    { id: "tryon", icon: "mirror", title: "Try it on", sub: "Put clothes on your photo" },
+    { id: "profile", icon: "user", title: "Style profile", sub: "Aesthetics & colors" },
+    { id: "chat", icon: "chat", title: "Ask the stylist", sub: "Chat about your looks" },
+    { id: "inspo", icon: "image", title: "Inspiration", sub: "Recreate looks you own" },
+    { id: "celeb", icon: "star", title: "Celebrity looks", sub: "Recreate from your closet" },
+    { id: "weather", icon: "sun", title: "Weather", sub: `${weather.city} · ${weather.tempF}°` },
+  ];
+  return (
+    <Page>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div>
+          <div style={{ color: T.textSoft, fontSize: 12.5, letterSpacing: .3, textTransform: "uppercase" }}>{niceDate()}</div>
+          <h1 style={styles.h1}>Hi, {profile.name || "you"}</h1>
+        </div>
+        <button onClick={() => setView("profile")} style={avatarBtn(profile.photo)}>{!profile.photo && <span style={{ color: T.brown }}><Icon name="user" size={26} /></span>}</button>
+      </div>
+      <div style={styles.weatherStrip}>
+        <span style={{ fontSize: 24 }}>{weather.icon}</span>
+        <div>
+          <div style={{ fontWeight: 700 }}>{weather.tempF}° · {weather.city}</div>
+          <div style={{ fontSize: 12, color: T.textSoft }}>Styling for <b style={{ color: T.rose }}>{ctx.occasion}</b> · {tempBand(weather.tempF)} day</div>
+        </div>
+        <button className="st-ghost" style={{ marginLeft: "auto", ...styles.ghostBtn, width: "auto", padding: "8px 12px" }} onClick={() => setView("ootd")}>Dress me →</button>
+      </div>
+      <SectionTitle>What you can do</SectionTitle>
+      <div style={styles.tileGrid}>
+        {tiles.map((t) => (
+          <button key={t.id} className="st-tile" style={styles.tile} onClick={() => setView(t.id)}>
+            <span style={styles.tileIcon}><Icon name={t.icon} size={20} /></span>
+            <span style={{ fontWeight: 700, fontSize: 13.5 }}>{t.title}</span>
+            <span style={{ fontSize: 11, color: T.textSoft }}>{t.sub}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18 }}>
+        <SectionTitle inline>My closet</SectionTitle>
+        <button className="st-ghost" style={{ ...styles.ghostBtn, width: "auto", padding: "6px 12px" }} onClick={() => setView("closet")}>See all</button>
+      </div>
+      <div style={styles.hscroll}>
+        {preview.map((i) => (
+          <div key={i.id} style={{ textAlign: "center", width: 72 }}>
+            <Swatch item={i} size={72} />
+            <div style={{ fontSize: 10.5, color: T.textSoft, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</div>
+          </div>
+        ))}
+        <button className="st-tile" style={{ ...styles.tile, width: 72, height: 72, padding: 0, gap: 2 }} onClick={() => setView("add")}>
+          <span style={{ fontSize: 22 }}>＋</span><span style={{ fontSize: 10 }}>Add</span>
+        </button>
+      </div>
+    </Page>
+  );
+}
+
+/* ADD ITEM */
+function AddItem({ closetActions, showToast, setView }) {
+  const [mode, setMode] = useState("photo");
+  const [draft, setDraft] = useState(null);
+  const photoRef = useRef(), videoRef = useRef(), rollRef = useRef();
+
+  const startFromPhoto = async (file) => {
+    const image = await fileToScaledDataURL(file);
+    const name = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+    // Open the form instantly from filename heuristics (no wait)…
+    setDraft({ image, name: name || "New item", category: guessCategory(file.name), color: guessColor(file.name), aesthetics: ["classic"], warmth: 2, occasions: ["casual"], source: "photo" });
+    // …then refine with Claude vision if the backend is configured. [[ VISION_AI: ITEM_CATEGORIZATION ]]
+    const ai = await visionClassify("garment", image);
+    if (ai) { setDraft((d) => (d ? { ...d, ...ai } : d)); showToast("Auto-detected with AI — tweak anything"); }
+  };
+  const sweepVideo = async () => {
+    // [[ VISION_AI: ITEM_CATEGORIZATION ]] run frame sampling + detection on the video here.
+    const detected = [
+      { name: "Detected top", category: "tops", color: "white", aesthetics: ["minimal"], warmth: 1, occasions: ["casual"], source: "video" },
+      { name: "Detected jeans", category: "bottoms", color: "denim", aesthetics: ["classic"], warmth: 2, occasions: ["casual"], source: "video" },
+      { name: "Detected sneakers", category: "shoes", color: "white", aesthetics: ["streetwear"], warmth: 2, occasions: ["casual"], source: "video" },
+    ];
+    closetActions.addMany(detected); showToast(`Closet sweep added ${detected.length} items — edit them in your closet`); setView("closet");
+  };
+  const importRoll = async (files) => {
+    const items = [];
+    for (const f of Array.from(files).slice(0, 12)) {
+      const image = await fileToScaledDataURL(f);
+      items.push({ image, name: (f.name || "item").replace(/\.[^.]+$/, "").replace(/[-_]/g, " ") || "Imported item", category: guessCategory(f.name), color: guessColor(f.name), aesthetics: ["classic"], warmth: 2, occasions: ["casual"], source: "camera-roll" });
+    }
+    closetActions.addMany(items); showToast(`Imported ${items.length} from your camera roll`); setView("closet");
+  };
+  // [[ INTEGRATION: ONLINE_PURCHASES ]] mock recent orders the user can auto-add.
+  const ORDERS = [
+    { name: "Linen wrap top", category: "tops", color: "cream", aesthetics: ["classic"], warmth: 1, occasions: ["work", "casual"], store: "Aria" },
+    { name: "Pointed slingbacks", category: "shoes", color: "black", aesthetics: ["classic"], warmth: 1, occasions: ["work", "night out"], store: "Maison" },
+    { name: "Pleated trousers", category: "bottoms", color: "camel", aesthetics: ["minimal", "classic"], warmth: 2, occasions: ["work"], store: "Aria" },
+  ];
+
+  return (
+    <Page>
+      <Header title="Add clothes" onBack={() => setView("home")} />
+      <div style={styles.segmented}>
+        {[["photo", "Photo"], ["video", "Video sweep"], ["roll", "Camera roll"], ["orders", "Orders"]].map(([id, lab]) => (
+          <button key={id} onClick={() => setMode(id)} className="st-seg" style={{ flex: 1, border: "none", borderRadius: 11, padding: "9px 6px", fontWeight: 700, fontSize: 12.5, background: mode === id ? T.pinkDeep : "transparent", color: mode === id ? "#fff" : T.textSoft }}>{lab}</button>
+        ))}
+      </div>
+
+      {mode === "photo" && !draft && (
+        <Empty icon="📸" title="Snap or upload an item" body="We simulate background removal and auto-detect the category and color. You can fix anything before saving.">
+          <button className="st-primary" style={styles.primary} onClick={() => photoRef.current.click()}>Choose a photo</button>
+          <input ref={photoRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && startFromPhoto(e.target.files[0])} />
+        </Empty>
+      )}
+      {mode === "photo" && draft && (
+        <ItemForm draft={draft} setDraft={setDraft} onSave={() => { closetActions.addItem(draft); showToast(`Added "${draft.name}"`); setDraft(null); setView("closet"); }} onCancel={() => setDraft(null)} />
+      )}
+      {mode === "video" && (
+        <Empty icon="🎥" title="Closet sweep" body="Record a slow pan across your closet and we'll detect items in bulk. Each detected piece lands in your closet ready to edit.">
+          <button className="st-primary" style={styles.primary} onClick={() => videoRef.current.click()}>Record / upload video</button>
+          <input ref={videoRef} type="file" accept="video/*" hidden onChange={() => sweepVideo()} />
+          <button className="st-ghost" style={styles.ghostBtn} onClick={sweepVideo}>Try it with a sample</button>
+        </Empty>
+      )}
+      {mode === "roll" && (
+        <Empty icon="🖼️" title="Import from camera roll" body="Pick several photos at once and we'll add them all, guessing each category and color.">
+          <button className="st-primary" style={styles.primary} onClick={() => rollRef.current.click()}>Select photos</button>
+          <input ref={rollRef} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files.length && importRoll(e.target.files)} />
+        </Empty>
+      )}
+      {mode === "orders" && (
+        <div>
+          <p style={styles.help}>Recent online purchases. Add them straight to your closet.</p>
+          {ORDERS.map((o, idx) => (
+            <div key={idx} style={styles.row}>
+              <Swatch item={o} size={52} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700 }}>{o.name}</div>
+                <div style={{ fontSize: 12, color: T.textSoft }}>{o.store} · {catLabel(o.category)}</div>
+              </div>
+              <button className="st-primary" style={{ ...styles.primary, padding: "8px 14px", width: "auto", minHeight: 0 }} onClick={() => { closetActions.addItem(o); showToast(`Added "${o.name}" from ${o.store}`); }}>Add</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Page>
+  );
+}
+
+function ItemForm({ draft, setDraft, onSave, onCancel }) {
+  const set = (patch) => setDraft({ ...draft, ...patch });
+  const toggleArr = (key, val) => { const arr = draft[key].includes(val) ? draft[key].filter((x) => x !== val) : [...draft[key], val]; set({ [key]: arr.length ? arr : draft[key] }); };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <Swatch item={draft} size={88} radius={20} />
+        <div style={{ fontSize: 12, color: T.textSoft }}>Background removed (simulated). Saved as a clean cut-out.</div>
+      </div>
+      <div><label style={styles.label}>Name</label><input style={styles.input} value={draft.name} onChange={(e) => set({ name: e.target.value })} /></div>
+      <div><label style={styles.label}>Category</label><div style={styles.wrapRow}>{CATEGORIES.map((c) => <Pill key={c.id} active={draft.category === c.id} onClick={() => set({ category: c.id })}>{c.label}</Pill>)}</div></div>
+      <div>
+        <label style={styles.label}>Color</label>
+        <div style={styles.wrapRow}>
+          {Object.keys(COLOR_META).map((c) => (
+            <button key={c} onClick={() => set({ color: c })} className="st-pill" style={{ background: draft.color === c ? T.pinkWash : T.card, border: `1px solid ${draft.color === c ? T.pinkDeep : T.line}`, display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ width: 14, height: 14, borderRadius: 4, background: colorHex(c), display: "inline-block" }} />{c}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div><label style={styles.label}>Aesthetic</label><div style={styles.wrapRow}>{AESTHETICS.map((a) => <Pill key={a} active={draft.aesthetics.includes(a)} onClick={() => toggleArr("aesthetics", a)}>{a}</Pill>)}</div></div>
+      <div><label style={styles.label}>Good for</label><div style={styles.wrapRow}>{OCCASIONS.map((o) => <Pill key={o} active={draft.occasions.includes(o)} onClick={() => toggleArr("occasions", o)}>{o}</Pill>)}</div></div>
+      <div><label style={styles.label}>Warmth — {["light", "mid", "warm"][draft.warmth - 1]}</label><div style={styles.wrapRow}>{[1, 2, 3].map((w) => <Pill key={w} active={draft.warmth === w} onClick={() => set({ warmth: w })}>{["Light", "Mid", "Warm"][w - 1]}</Pill>)}</div></div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button className="st-ghost" style={{ ...styles.ghostBtn, flex: 1 }} onClick={onCancel}>Cancel</button>
+        <button className="st-primary" style={{ ...styles.primary, flex: 2 }} onClick={onSave}>Save to closet</button>
+      </div>
+    </div>
+  );
+}
+
+/* CLOSET */
+function Closet({ state, closetActions, setView, showToast }) {
+  const [cat, setCat] = useState("all");
+  const [editing, setEditing] = useState(null);
+  const items = state.closet.filter((i) => cat === "all" || i.category === cat);
+  return (
+    <Page>
+      <Header title="My closet" onBack={() => setView("home")} right={<button className="st-primary" style={{ ...styles.primary, width: "auto", padding: "8px 14px", minHeight: 0 }} onClick={() => setView("add")}>＋ Add</button>} />
+      <div style={styles.hscroll}>
+        <Pill active={cat === "all"} onClick={() => setCat("all")}>All · {state.closet.length}</Pill>
+        {CATEGORIES.map((c) => { const n = state.closet.filter((i) => i.category === c.id).length; return <Pill key={c.id} active={cat === c.id} onClick={() => setCat(c.id)}>{c.label} · {n}</Pill>; })}
+      </div>
+      {items.length === 0 ? (
+        <Empty icon="🧺" title="Nothing here yet" body="Add a few pieces and they'll show up sorted by category.">
+          <button className="st-primary" style={styles.primary} onClick={() => setView("add")}>Add clothes</button>
+        </Empty>
+      ) : (
+        <div style={styles.cardGrid}>
+          {items.map((i) => (
+            <div key={i.id} style={styles.itemCard}>
+              <div style={{ position: "relative" }}>
+                <Swatch item={i} size={"100%"} radius={14} />
+                <span style={{ ...styles.cleanBadge, background: i.clean ? "rgba(127,169,138,.92)" : "rgba(197,143,163,.92)" }}>{i.clean ? "Clean" : "In wash"}</span>
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginTop: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</div>
+              <div style={{ fontSize: 11, color: T.textSoft }}>{catLabel(i.category)} · {i.color}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <button className="st-ghost" style={styles.miniBtn} onClick={() => closetActions.toggleClean(i.id)}>{i.clean ? "→ Wash" : "→ Clean"}</button>
+                <button className="st-ghost" style={styles.miniBtn} onClick={() => setEditing(i)}>Edit</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {editing && (
+        <Modal onClose={() => setEditing(null)} title={`Edit ${editing.name}`}>
+          <ItemForm draft={editing} setDraft={setEditing} onSave={() => { closetActions.editItem(editing.id, editing); showToast("Saved changes"); setEditing(null); }} onCancel={() => setEditing(null)} />
+          <button className="st-ghost" style={{ ...styles.ghostBtn, marginTop: 10, color: T.rose }} onClick={() => { closetActions.removeItem(editing.id); showToast("Removed from closet"); setEditing(null); }}>Delete item</button>
+        </Modal>
+      )}
+    </Page>
+  );
+}
+
+/* OUTFIT OF THE DAY */
+function OutfitOfDay({ state, ctx, weather, setProfile, saveOutfit, markWorn, setView, lastOutfit, pendingOutfit }) {
+  const [seed, setSeed] = useState(0);
+  const [outfit, setOutfit] = useState([]);
+  const [tab, setTab] = useState("today");
+  const regenerate = useCallback((s) => { const o = buildOutfit(state.closet, { ...ctx, occasion: state.profile.occasion }, s); setOutfit(o); lastOutfit.current = o; }, [state.closet, ctx, state.profile.occasion, lastOutfit]);
+  // Rebuild a slot list (item + swap options) from a set of item ids the stylist handed off.
+  const loadFromIds = useCallback((ids) => {
+    const slotName = { tops: "top", bottoms: "bottom", dresses: "dress", shoes: "shoes", bags: "bag", accessories: "accessory" };
+    const o = ids.map((id) => {
+      const item = state.closet.find((c) => c.id === id);
+      if (!item) return null;
+      const options = rank(state.closet.filter((i) => i.clean && i.category === item.category), { ...ctx, occasion: state.profile.occasion }, seed);
+      return { slot: slotName[item.category] || item.category, item, options: options.length ? options : [item] };
+    }).filter(Boolean);
+    setOutfit(o); lastOutfit.current = o;
+  }, [state.closet, ctx, state.profile.occasion, seed, lastOutfit]);
+  // Regenerate when inputs change; honor a stylist hand-off first (so "Open on Outfit screen" loads that look).
+  useEffect(() => {
+    if (pendingOutfit && pendingOutfit.current && pendingOutfit.current.length) {
+      const ids = pendingOutfit.current; pendingOutfit.current = null;
+      loadFromIds(ids); setTab("today");
+    } else {
+      regenerate(seed);
+    }
+  }, [seed, state.profile.occasion, state.profile.city, state.closet]);
+
+  const swapSlot = (slotIndex) => {
+    setOutfit((prev) => {
+      const next = [...prev]; const slot = next[slotIndex]; const opts = slot.options;
+      const curIdx = opts.findIndex((o) => o.id === slot.item.id);
+      next[slotIndex] = { ...slot, item: opts[(curIdx + 1) % opts.length] || slot.item };
+      lastOutfit.current = next; return next;
+    });
+  };
+  const savedLooks = state.saved.map((s) => ({ ...s, items: s.itemIds.map((id) => state.closet.find((c) => c.id === id)).filter(Boolean) })).filter((s) => s.items.length);
+
+  return (
+    <Page>
+      <Header title="Outfit of the day" onBack={() => setView("home")} />
+      <div style={styles.segmented}>
+        <button onClick={() => setTab("today")} className="st-seg" style={{ flex: 1, border: "none", borderRadius: 11, padding: "9px 6px", fontWeight: 700, background: tab === "today" ? T.pinkDeep : "transparent", color: tab === "today" ? "#fff" : T.textSoft }}>Today</button>
+        <button onClick={() => setTab("saved")} className="st-seg" style={{ flex: 1, border: "none", borderRadius: 11, padding: "9px 6px", fontWeight: 700, background: tab === "saved" ? T.pinkDeep : "transparent", color: tab === "saved" ? "#fff" : T.textSoft }}>Saved · {savedLooks.length}</button>
+      </div>
+      {tab === "today" && (
+        <>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+            <span style={{ fontSize: 12, color: T.textSoft }}>For</span>
+            {OCCASIONS.map((o) => <Pill key={o} active={state.profile.occasion === o} onClick={() => setProfile({ occasion: o })}>{o}</Pill>)}
+          </div>
+          <div style={{ fontSize: 12, color: T.textSoft, marginBottom: 10 }}>Ranked by {weather.tempF}° {weather.icon} weather, your {state.profile.aesthetics.join(" / ")} style, and what's clean.</div>
+          {outfit.length === 0 ? (
+            <Empty icon="🧺" title="Not enough clean clothes" body="Everything might be in the wash, or your closet's still small. Add items or mark a few clean.">
+              <button className="st-primary" style={styles.primary} onClick={() => setView("closet")}>Open closet</button>
+            </Empty>
+          ) : (
+            <>
+              <div style={styles.outfitCard}>
+                {outfit.map((s, idx) => (
+                  <div key={s.slot} style={styles.outfitRow}>
+                    <Swatch item={s.item} size={58} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: T.pinkDeep, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>{s.slot}</div>
+                      <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.item.name}</div>
+                      <div style={{ fontSize: 11, color: T.textSoft }}>{s.item.color} · {s.item.aesthetics.join(", ")}</div>
+                    </div>
+                    {s.options.length > 1 && <button className="st-ghost" style={styles.miniBtn} onClick={() => swapSlot(idx)}>Swap</button>}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                <button className="st-ghost" style={{ ...styles.ghostBtn, flex: 1 }} onClick={() => setSeed((x) => x + 1)}>Reshuffle</button>
+                <button className="st-ghost" style={{ ...styles.ghostBtn, flex: 1 }} onClick={() => saveOutfit(outfit)}>Save</button>
+                <button className="st-ghost" style={{ ...styles.ghostBtn, flex: 1 }} onClick={() => setView("tryon")}>Try on</button>
+                <button className="st-primary" style={{ ...styles.primary, flex: "1 1 100%" }} onClick={() => markWorn(outfit)}>Wear this today</button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {tab === "saved" && (
+        savedLooks.length === 0 ? <Empty icon="♡" title="No go-to looks yet" body="Save outfits you love and they'll live here." /> : (
+          savedLooks.map((s) => (
+            <div key={s.id} style={styles.outfitCard}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>{s.name}</div>
+              <div style={styles.hscroll}>
+                {s.items.map((it) => (
+                  <div key={it.id} style={{ width: 64, textAlign: "center" }}>
+                    <Swatch item={it} size={64} />
+                    <div style={{ fontSize: 10, color: T.textSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</div>
+                  </div>
+                ))}
+              </div>
+              <button className="st-primary" style={{ ...styles.primary, marginTop: 8 }} onClick={() => markWorn(s.items.map((it) => ({ item: it })))}>Wear this</button>
+            </div>
+          ))
+        )
+      )}
+    </Page>
+  );
+}
+
+/* TRY ON */
+const CAT_W = { tops: 46, dresses: 52, bottoms: 44, shoes: 30, bags: 24, accessories: 26 };
+const CAT_Y = { accessories: 14, tops: 27, dresses: 37, bags: 50, bottoms: 57, shoes: 82 };
+
+// Live in-app camera: opens the device camera, captures a frame, returns a data URL.
+function CameraModal({ onCapture, onClose }) {
+  const videoRef = useRef();
+  const streamRef = useRef(null);
+  const [facing, setFacing] = useState("environment");
+  const [error, setError] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setError(null); setReady(false);
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("unsupported");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; try { await videoRef.current.play(); } catch (_) {} }
+        setReady(true);
+      } catch (e) {
+        const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+        setError(denied
+          ? "Camera access was blocked. Allow the camera in your browser, or use Upload instead."
+          : "Couldn't open the camera on this device. Use Upload instead.");
+      }
+    })();
+    return () => { cancelled = true; if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; } };
+  }, [facing]);
+
+  const snap = () => {
+    const v = videoRef.current; if (!v || !v.videoWidth) return;
+    const max = 760;
+    const scale = Math.min(1, max / Math.max(v.videoWidth, v.videoHeight));
+    const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    if (facing === "user") { ctx.translate(w, 0); ctx.scale(-1, 1); } // un-mirror selfie to match preview
+    ctx.drawImage(v, 0, 0, w, h);
+    onCapture(c.toDataURL("image/jpeg", 0.82));
+  };
+
+  return (
+    <div style={styles.camWrap}>
+      <div style={styles.camStage}>
+        {error
+          ? <div style={{ textAlign: "center", color: "#fff", padding: 28, fontSize: 14, lineHeight: 1.5 }}>{error}</div>
+          : <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: facing === "user" ? "scaleX(-1)" : "none" }} />}
+        <div style={styles.camHint}>Fit your full body in frame</div>
+      </div>
+      <div style={styles.camBar}>
+        <button className="st-ghost" style={styles.camSecondary} onClick={onClose}>Cancel</button>
+        <button aria-label="Take photo" onClick={snap} disabled={!!error || !ready} style={{ ...styles.camShutter, opacity: (!!error || !ready) ? .5 : 1 }}><span style={styles.camShutterInner} /></button>
+        <button className="st-ghost" style={styles.camSecondary} onClick={() => setFacing((f) => (f === "user" ? "environment" : "user"))}>Flip</button>
+      </div>
+    </div>
+  );
+}
+
+function TryOn({ state, setProfile, setView, showToast }) {
+  const bodyRef = useRef(), faceRef = useRef(), stageRef = useRef(), dragRef = useRef(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [camOpen, setCamOpen] = useState(false);
+  const hasPhoto = !!state.profile.bodyPhoto;
+
+  // placed garments on the photo: { uid, itemId, xPct, yPct, scale, z } — persisted in profile.tryon
+  const [placed, setPlaced] = useState(() => (state.profile.tryon || []).filter((p) => state.closet.some((c) => c.id === p.itemId)));
+  const [selected, setSelected] = useState(null);
+  const placedRef = useRef(placed);
+  useEffect(() => { placedRef.current = placed; }, [placed]);
+  const zTop = useRef(placed.reduce((m, p) => Math.max(m, p.z || 1), 1));
+
+  const itemById = (id) => state.closet.find((c) => c.id === id);
+  const save = (next) => { setPlaced(next); setProfile({ tryon: next }); };
+
+  const setBody = async (f) => { const url = await fileToScaledDataURL(f, 620); setProfile({ bodyPhoto: url }); showToast("Body photo saved for try-on"); };
+
+  const addToBody = (item) => {
+    if (!hasPhoto) { showToast("Add your photo first"); return; }
+    zTop.current += 1;
+    const p = { uid: nid(), itemId: item.id, xPct: item.category === "bags" ? 72 : 50, yPct: CAT_Y[item.category] || 45, scale: 1, z: zTop.current };
+    save([...placed, p]); setSelected(p.uid);
+  };
+  const removeP = (uid) => { save(placed.filter((p) => p.uid !== uid)); setSelected(null); };
+  const clearAll = () => { save([]); setSelected(null); };
+  const resize = (uid, d) => save(placed.map((p) => (p.uid === uid ? { ...p, scale: Math.max(0.4, Math.min(2.4, +(p.scale + d).toFixed(2))) } : p)));
+  const bringFront = (uid) => { zTop.current += 1; save(placed.map((p) => (p.uid === uid ? { ...p, z: zTop.current } : p))); };
+
+  // drag to position (mouse + touch via pointer events)
+  const startDrag = (e, uid) => {
+    e.stopPropagation(); setSelected(uid);
+    const p = placed.find((x) => x.uid === uid); if (!p) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    dragRef.current = { uid, sx: e.clientX, sy: e.clientY, ox: p.xPct, oy: p.yPct };
+  };
+  const onDrag = (e, uid) => {
+    if (!dragRef.current || dragRef.current.uid !== uid || !stageRef.current) return;
+    const r = stageRef.current.getBoundingClientRect();
+    let nx = dragRef.current.ox + ((e.clientX - dragRef.current.sx) / r.width) * 100;
+    let ny = dragRef.current.oy + ((e.clientY - dragRef.current.sy) / r.height) * 100;
+    nx = Math.max(3, Math.min(97, nx)); ny = Math.max(3, Math.min(97, ny));
+    setPlaced((prev) => prev.map((p) => (p.uid === uid ? { ...p, xPct: nx, yPct: ny } : p)));
+  };
+  const endDrag = (e, uid) => { if (dragRef.current && dragRef.current.uid === uid) { dragRef.current = null; setProfile({ tryon: placedRef.current }); } };
+
+  const doUndertone = async (f) => {
+    setAnalyzing(true);
+    try {
+      const url = await fileToScaledDataURL(f, 320);
+      // [[ VISION_AI: SKIN_UNDERTONE ]] Claude reads the undertone; falls back to the pixel heuristic.
+      const ai = await visionClassify("undertone", url);
+      const tone = (ai && ai.undertone) || await analyzeUndertone(url); // analyzed, then discarded — never stored
+      setProfile({ undertone: tone });
+      showToast(`Undertone read as ${tone} — photo wasn't saved`);
+    } catch (e) {
+      showToast("Couldn't read that photo — try another.");
+    } finally {
+      setAnalyzing(false); // never leave the button stuck on "Analyzing…"
+    }
+  };
+
+  return (
+    <Page>
+      <Header title="Try it on" onBack={() => setView("home")} right={placed.length ? <button className="st-ghost" style={{ ...styles.ghostBtn, width: "auto", padding: "6px 12px" }} onClick={clearAll}>Clear</button> : null} />
+
+      <div ref={stageRef} style={styles.tryonStage} onPointerDown={() => setSelected(null)}>
+        {hasPhoto ? (
+          <>
+            <img src={state.profile.bodyPhoto} alt="you" style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} />
+            {/* [[ VISION_AI: VIRTUAL_TRY_ON ]] real garment warping/fitting goes here.
+                For now each selected piece is a draggable, resizable overlay you position by hand. */}
+            {placed.map((p) => {
+              const it = itemById(p.itemId); if (!it) return null;
+              return (
+                <div key={p.uid}
+                  onPointerDown={(e) => startDrag(e, p.uid)}
+                  onPointerMove={(e) => onDrag(e, p.uid)}
+                  onPointerUp={(e) => endDrag(e, p.uid)}
+                  style={{
+                    position: "absolute", left: `${p.xPct}%`, top: `${p.yPct}%`,
+                    width: `${CAT_W[it.category] || 40}%`,
+                    transform: `translate(-50%, -50%) scale(${p.scale})`, transformOrigin: "center",
+                    zIndex: p.z, touchAction: "none", cursor: "grab",
+                    filter: "drop-shadow(0 6px 14px rgba(0,0,0,.28))",
+                    borderRadius: 14,
+                    outline: selected === p.uid ? `2.5px solid ${T.pinkDeep}` : "none",
+                    outlineOffset: 2,
+                  }}>
+                  <Swatch item={it} size={"100%"} radius={12} />
+                </div>
+              );
+            })}
+            <div style={styles.tryonTag}>{placed.length ? "Drag to position · simulated try-on" : "Tap clothes below to dress your photo"}</div>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", color: T.textSoft, padding: 24 }}>
+            <span style={{ color: T.taupe }}><Icon name="mirror" size={40} /></span>
+            <div style={{ fontSize: 13, marginTop: 8 }}>Take or upload a full-body photo, then add clothes on top.</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="st-primary" style={{ ...styles.primary, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setCamOpen(true)}><Icon name="camera" size={18} /> {hasPhoto ? "Retake" : "Take photo"}</button>
+        <button className="st-ghost" style={{ ...styles.ghostBtn, flex: 1 }} onClick={() => bodyRef.current.click()}>{hasPhoto ? "Replace" : "Upload"}</button>
+      </div>
+      <input ref={bodyRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && setBody(e.target.files[0])} />
+
+      {camOpen && <CameraModal
+        onClose={() => setCamOpen(false)}
+        onCapture={(url) => { setProfile({ bodyPhoto: url }); setCamOpen(false); showToast("Photo captured"); }}
+      />}
+
+      {selected && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+          <button className="st-ghost" style={styles.miniBtn} onClick={() => resize(selected, -0.12)}>− Smaller</button>
+          <button className="st-ghost" style={styles.miniBtn} onClick={() => resize(selected, 0.12)}>＋ Bigger</button>
+          <button className="st-ghost" style={styles.miniBtn} onClick={() => bringFront(selected)}>⤢ Front</button>
+          <button className="st-ghost" style={{ ...styles.miniBtn, color: T.rose }} onClick={() => removeP(selected)}>✕ Remove</button>
+        </div>
+      )}
+
+      <SectionTitle>Your clothes</SectionTitle>
+      <p style={styles.help}>Tap a piece to place it on your photo, then drag it where it fits. Select a piece to resize it or send it forward.</p>
+      {state.closet.length === 0 ? (
+        <Empty icon="🚪" title="Closet's empty" body="Add a few items first and they'll show up here to try on.">
+          <button className="st-primary" style={styles.primary} onClick={() => setView("add")}>Add clothes</button>
+        </Empty>
+      ) : (
+        <div style={styles.tray}>
+          {state.closet.map((it) => (
+            <button key={it.id} className="st-tile" style={styles.trayItem} onClick={() => addToBody(it)} title={`Add ${it.name}`}>
+              <Swatch item={it} size={58} radius={14} />
+              <span style={{ fontSize: 10, color: T.textSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%", textAlign: "center" }}>{it.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <SectionTitle>Color match</SectionTitle>
+      <div style={styles.row}>
+        <div style={{ display: "flex", gap: 4 }}>
+          <span style={{ width: 14, height: 28, borderRadius: 4, background: "#C39A6B" }} />
+          <span style={{ width: 14, height: 28, borderRadius: 4, background: "#D98C9C" }} />
+          <span style={{ width: 14, height: 28, borderRadius: 4, background: "#2B2622" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700 }}>Skin undertone {state.profile.undertone ? `· ${state.profile.undertone}` : ""}</div>
+          <div style={{ fontSize: 12, color: T.textSoft }}>Capture a face photo and we'll match colors to your undertone. Your photo is analyzed, then immediately discarded — never stored.</div>
+        </div>
+      </div>
+      <button className="st-ghost" style={styles.ghostBtn} disabled={analyzing} onClick={() => faceRef.current.click()}>{analyzing ? "Analyzing…" : "Capture face photo"}</button>
+      <input ref={faceRef} type="file" accept="image/*" capture="user" hidden onChange={(e) => e.target.files[0] && doUndertone(e.target.files[0])} />
+      {state.profile.undertone && (
+        <div style={{ ...styles.help, marginTop: 8 }}>
+          {state.profile.undertone === "warm" && "Warm undertone — earth tones, camel, olive and gold flatter you most."}
+          {state.profile.undertone === "cool" && "Cool undertone — pastels, blush, and crisp black/white suit you best."}
+          {state.profile.undertone === "neutral" && "Neutral undertone — you can wear almost anything; rose and beige are easy wins."}
+        </div>
+      )}
+    </Page>
+  );
+}
+
+/* STYLE PROFILE */
+function Profile({ state, setProfile, setView, showToast }) {
+  const p = state.profile;
+  const avatarRef = useRef();
+  const toggle = (key, val) => { const arr = p[key].includes(val) ? p[key].filter((x) => x !== val) : [...p[key], val]; setProfile({ [key]: arr.length ? arr : p[key] }); };
+  return (
+    <Page>
+      <Header title="Style profile" onBack={() => setView("home")} />
+      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <button onClick={() => avatarRef.current.click()} style={avatarBtn(p.photo)}>{!p.photo && <span style={{ color: T.brown }}><Icon name="camera" size={24} /></span>}</button>
+        <input ref={avatarRef} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) { setProfile({ photo: await fileToScaledDataURL(f, 240) }); showToast("Photo updated"); } }} />
+        <div style={{ flex: 1 }}><label style={styles.label}>Name</label><input style={styles.input} value={p.name} onChange={(e) => setProfile({ name: e.target.value })} /></div>
+      </div>
+      <SectionTitle>Aesthetics</SectionTitle>
+      <div style={styles.wrapRow}>{AESTHETICS.map((a) => <Pill key={a} active={p.aesthetics.includes(a)} onClick={() => toggle("aesthetics", a)}>{a}</Pill>)}</div>
+      <SectionTitle>Color families</SectionTitle>
+      <div style={styles.wrapRow}>{COLOR_FAMILIES.map((c) => <Pill key={c} active={p.colorFamilies.includes(c)} onClick={() => toggle("colorFamilies", c)}>{c}</Pill>)}</div>
+      <SectionTitle>Daily context</SectionTitle>
+      <label style={styles.label}>Occasion</label>
+      <div style={styles.wrapRow}>{OCCASIONS.map((o) => <Pill key={o} active={p.occasion === o} onClick={() => setProfile({ occasion: o })}>{o}</Pill>)}</div>
+      <label style={{ ...styles.label, marginTop: 10 }}>Weather location</label>
+      <div style={styles.wrapRow}>{CITIES.map((c) => <Pill key={c.name} active={p.city === c.name} onClick={() => setProfile({ city: c.name })}>{c.name}</Pill>)}</div>
+      <button className="st-ghost" style={{ ...styles.ghostBtn, marginTop: 18 }} onClick={() => setView("weather")}>See weather for {p.city} →</button>
+    </Page>
+  );
+}
+
+/* STYLIST CHAT */
+function Chat({ state, update, ctx, setView, lastOutfit, saveOutfit, pendingOutfit }) {
+  const [text, setText] = useState("");
+  const endRef = useRef();
+  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [state.chat.length]);
+  const send = (msg) => {
+    const message = (msg || text).trim(); if (!message) return; setText("");
+    const reply = stylistReply(message, state, ctx, { lastOutfit: lastOutfit.current, saveOutfit });
+    update((s) => { s.chat = [...s.chat, { role: "user", text: message }, { role: "stylist", text: reply.text, outfit: reply.outfit ? reply.outfit.map((o) => o.item.id) : null }]; return s; });
+    if (reply.outfit) lastOutfit.current = reply.outfit;
+  };
+  const quick = ["What's clean?", `Outfit for ${ctx.occasion}`, "Make it warmer", "What goes with my silk blouse?"];
+  return (
+    <Page noScroll>
+      <Header title="Stylist" onBack={() => setView("home")} />
+      <div style={styles.chatScroll}>
+        {state.chat.map((m, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+            <div style={{ ...styles.bubble, background: m.role === "user" ? T.pinkDeep : T.card, color: m.role === "user" ? "#fff" : T.text, borderBottomRightRadius: m.role === "user" ? 4 : 16, borderBottomLeftRadius: m.role === "user" ? 16 : 4 }}>
+              {m.text}
+              {m.outfit && <button className="st-ghost" style={{ ...styles.miniBtn, marginTop: 8, display: "block" }} onClick={() => { if (pendingOutfit) pendingOutfit.current = m.outfit; setView("ootd"); }}>Open on Outfit screen →</button>}
+            </div>
+          </div>
+        ))}
+        <div ref={endRef} />
+      </div>
+      <div style={styles.hscroll}>{quick.map((q) => <Pill key={q} onClick={() => send(q)}>{q}</Pill>)}</div>
+      <div style={styles.chatInputRow}>
+        <input style={{ ...styles.input, marginBottom: 0 }} value={text} placeholder="Ask your stylist…" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
+        <button className="st-primary" style={{ ...styles.primary, width: "auto", padding: "0 18px" }} onClick={() => send()}>Send</button>
+      </div>
+    </Page>
+  );
+}
+
+/* INSPIRATION + CELEBRITY */
+function Inspiration({ state, update, setView, saveOutfit, showToast, celebOnly }) {
+  const looks = LOOKS.filter((l) => (celebOnly ? l.celeb : true));
+  const photoInput = useRef();
+  const uploadFor = useRef(null);
+  const photos = state.celebPhotos || {};
+
+  const pickPhoto = (id) => { uploadFor.current = id; if (photoInput.current) { photoInput.current.value = ""; photoInput.current.click(); } };
+  const onPhoto = async (e) => {
+    const f = e.target.files[0]; const id = uploadFor.current; if (!f || !id) return;
+    const url = await fileToScaledDataURL(f, 480, 0.78);
+    update((s) => { s.celebPhotos = { ...(s.celebPhotos || {}), [id]: url }; return s; });
+    showToast("Photo added");
+  };
+  const removePhoto = (id) => update((s) => { const next = { ...(s.celebPhotos || {}) }; delete next[id]; s.celebPhotos = next; return s; });
+
+  return (
+    <Page>
+      <Header title={celebOnly ? "Celebrity looks" : "Inspiration"} onBack={() => setView("home")} />
+      <p style={styles.help}>{celebOnly
+        ? "Real celebrities' signature looks. Each outfit is shown as an illustration, recreated from your own closet, with a match score. Tap “View photos” to see real images, or “Add photo” to pin your own."
+        : "Each look is shown as an outfit, recreated from your own closet first. The match shows how close you can get and what you're missing."}</p>
+
+      <input ref={photoInput} type="file" accept="image/*" hidden onChange={onPhoto} />
+
+      {looks.map((look) => {
+        const { chosen, pct, missing } = recreate(look, state.closet);
+        const photo = photos[look.id];
+        return (
+          <div key={look.id} style={styles.lookCard}>
+            {/* header: user-supplied photo if present, otherwise the colour card */}
+            <div style={{ height: 112, borderRadius: 16, overflow: "hidden", display: "flex", alignItems: "flex-end", padding: 12, color: "#fff", position: "relative",
+              background: photo ? `linear-gradient(to top, rgba(0,0,0,.6), rgba(0,0,0,.05)), center/cover url(${photo})` : `linear-gradient(135deg, ${look.grad[0]}, ${look.grad[1]})` }}>
+              <div style={{ position: "relative", zIndex: 1 }}>
+                <div style={{ fontFamily: "Fraunces, serif", fontSize: 21, textShadow: "0 1px 5px rgba(0,0,0,.4)" }}>{look.name}</div>
+                <div style={{ fontSize: 11.5, opacity: .96, textShadow: "0 1px 4px rgba(0,0,0,.4)" }}>{look.vibe}</div>
+              </div>
+              <div style={styles.matchBadge}>{pct}% match</div>
+              {photo && <button className="st-ghost" onClick={() => removePhoto(look.id)} title="Remove photo" style={{ position: "absolute", top: 8, right: 10, width: 26, height: 26, padding: 0, borderRadius: "50%", background: "rgba(0,0,0,.45)", color: "#fff", border: "none", fontSize: 13, lineHeight: 1 }}>✕</button>}
+            </div>
+
+            {/* the outfit, illustrated */}
+            {look.pieces && (
+              <>
+                <div style={{ ...styles.miniLabel, marginTop: 10 }}>The outfit</div>
+                <div style={styles.flatlay}>
+                  {look.pieces.map((p, i) => (
+                    <div key={i} style={styles.flatItem}><GarmentSVG kind={p.kind} color={p.color} size={50} /></div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {look.desc && <div style={{ fontSize: 12, color: T.textSoft, lineHeight: 1.45, marginTop: 8 }}>{look.desc}</div>}
+
+            {/* recreate from your closet */}
+            <div style={{ ...styles.miniLabel, marginTop: 10 }}>From your closet</div>
+            <div style={styles.hscroll}>
+              {chosen.map((c, i) => c.missing ? (
+                <div key={i} style={{ width: 62, textAlign: "center" }}>
+                  <div style={{ width: 62, height: 62, borderRadius: 14, border: `1.5px dashed ${T.pink}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.pink, fontSize: 22 }}>＋</div>
+                  <div style={{ fontSize: 10, color: T.rose, marginTop: 2 }}>need {catLabel(c.category)}</div>
+                </div>
+              ) : (
+                <div key={i} style={{ width: 62, textAlign: "center" }}>
+                  <Swatch item={c} size={62} />
+                  <div style={{ fontSize: 10, color: T.textSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <span style={{ fontSize: 12, color: missing ? T.rose : T.clean, fontWeight: 600 }}>{missing ? `${missing} piece${missing > 1 ? "s" : ""} missing` : "You own this whole look ✓"}</span>
+              <button className="st-ghost" style={{ ...styles.miniBtn, marginLeft: "auto" }} onClick={() => { const owned = chosen.filter((c) => !c.missing); if (owned.length) saveOutfit(owned.map((it) => ({ item: it })), look.name); else showToast("Add some pieces first"); }}>Save look</button>
+            </div>
+
+            {celebOnly && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button className="st-primary" style={{ ...styles.primary, flex: 1, padding: "10px 12px", minHeight: 0, fontSize: 13 }} onClick={() => pickPhoto(look.id)}>{photo ? "Change photo" : "Add a photo"}</button>
+                <a className="st-ghost" style={{ ...styles.ghostBtn, width: "auto", padding: "10px 14px", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }} href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(look.name + " outfit street style")}`} target="_blank" rel="noopener noreferrer">View photos ↗</a>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </Page>
+  );
+}
+
+/* WEATHER */
+function WeatherView({ weather, state, setProfile, setView }) {
+  const band = tempBand(weather.tempF);
+  const advice = band === "cold" ? "Layer up — knits, boots, and a scarf." : band === "hot" ? "Keep it light and breathable." : "A light layer you can shed works perfectly.";
+  return (
+    <Page>
+      <Header title="Weather" onBack={() => setView("home")} />
+      <div style={{ ...styles.outfitCard, alignItems: "center", textAlign: "center", display: "flex", flexDirection: "column", gap: 4, paddingTop: 24, paddingBottom: 24 }}>
+        <div style={{ fontSize: 56 }}>{weather.icon}</div>
+        <div style={{ fontFamily: "Fraunces, serif", fontSize: 44, color: T.text }}>{weather.tempF}°</div>
+        <div style={{ color: T.textSoft }}>{weather.city} · {weather.cond}</div>
+        <div style={{ marginTop: 8, color: T.rose, fontWeight: 600 }}>{advice}</div>
+      </div>
+      <SectionTitle>Choose a city</SectionTitle>
+      <p style={styles.help}>Live weather drives your outfit ranking. Pick from the list (a real weather API can replace this).</p>
+      <div style={styles.wrapRow}>{CITIES.map((c) => <Pill key={c.name} active={state.profile.city === c.name} onClick={() => setProfile({ city: c.name })}>{c.name}</Pill>)}</div>
+      <button className="st-primary" style={{ ...styles.primary, marginTop: 16 }} onClick={() => setView("ootd")}>Style today's outfit →</button>
+    </Page>
+  );
+}
+
+/* LAYOUT HELPERS */
+function Page({ children, noScroll }) { return <div style={{ display: "flex", flexDirection: "column", gap: 12, height: noScroll ? "100%" : "auto", paddingBottom: noScroll ? 0 : 12 }}>{children}</div>; }
+function Header({ title, onBack, right }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+      {onBack && <button className="st-ghost" onClick={onBack} style={{ ...styles.ghostBtn, width: "auto", padding: "6px 10px" }}>←</button>}
+      <h2 style={{ ...styles.h2, flex: 1 }}>{title}</h2>
+      {right}
+    </div>
+  );
+}
+function SectionTitle({ children, inline }) { return <div style={{ fontFamily: "Fraunces, serif", fontSize: 16, color: T.text, marginTop: inline ? 0 : 6, marginBottom: 2 }}>{children}</div>; }
+function Empty({ icon, title, body, children }) {
+  return (
+    <div style={{ textAlign: "center", padding: "30px 16px", color: T.textSoft, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ fontSize: 42 }}>{icon}</div>
+      <div style={{ fontFamily: "Fraunces, serif", fontSize: 18, color: T.text }}>{title}</div>
+      <div style={{ fontSize: 13, maxWidth: 280 }}>{body}</div>
+      {children}
+    </div>
+  );
+}
+function Modal({ children, onClose, title }) {
+  return (
+    <div style={styles.modalWrap} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+          <h3 style={{ ...styles.h2, fontSize: 18, flex: 1 }}>{title}</h3>
+          <button className="st-ghost" onClick={onClose} style={{ ...styles.ghostBtn, width: "auto", padding: "4px 10px" }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+const niceDate = () => new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+
+/* INLINE STYLES */
+const styles = {
+  appWrap: { minHeight: "100vh", width: "100%", display: "flex", justifyContent: "center", alignItems: "stretch", background: `radial-gradient(130% 90% at 50% 0%, ${T.bgDeep} 0%, ${T.bg} 52%)`, fontFamily: "'Nunito Sans', system-ui, sans-serif", color: T.text },
+  phone: { width: "100%", maxWidth: 460, minHeight: "100vh", margin: "0 auto", background: "linear-gradient(180deg, #FCEAEE 0%, #FBEFEF 26%)", display: "flex", flexDirection: "column", position: "relative", boxShadow: "0 0 60px rgba(176,110,123,.14)" },
+  scrollArea: { flex: 1, overflowY: "auto", padding: "20px 18px 90px" },
+  nav: { position: "sticky", bottom: 0, left: 0, right: 0, display: "flex", background: "rgba(251,231,236,.85)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${T.line}`, padding: "6px 4px 8px" },
+  h1: { fontFamily: "Fraunces, serif", fontSize: 30, margin: "2px 0 0", fontWeight: 500, color: T.text },
+  h2: { fontFamily: "Fraunces, serif", fontSize: 22, margin: 0, fontWeight: 500, color: T.text },
+  weatherStrip: { display: "flex", alignItems: "center", gap: 12, background: T.cream, border: `1px solid ${T.line}`, borderRadius: 18, padding: "12px 14px", marginTop: 10 },
+  tileGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 4 },
+  tile: { background: T.card, border: `1px solid ${T.line}`, borderRadius: 18, padding: "16px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center", color: T.text },
+  tileIcon: { width: 40, height: 40, borderRadius: "50%", background: T.pinkWash, color: T.pinkDeep, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  hscroll: { display: "flex", gap: 10, overflowX: "auto", padding: "6px 2px 8px" },
+  cardGrid: { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 },
+  itemCard: { background: T.card, border: `1px solid ${T.line}`, borderRadius: 18, padding: 10 },
+  cleanBadge: { position: "absolute", top: 8, left: 8, color: "#fff", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999 },
+  miniBtn: { flex: 1, fontSize: 11.5, padding: "6px 8px", borderRadius: 10, border: `1px solid ${T.line}`, background: T.card, color: T.text, fontWeight: 600 },
+  outfitCard: { background: T.card, border: `1px solid ${T.line}`, borderRadius: 20, padding: 14 },
+  outfitRow: { display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: `1px solid ${T.pinkWash}` },
+  primary: { width: "100%", background: T.pinkDeep, color: "#fff", border: "none", borderRadius: 14, padding: "13px 16px", fontWeight: 700, fontSize: 14.5, minHeight: 46 },
+  ghostBtn: { width: "100%", background: T.card, color: T.text, border: `1px solid ${T.line}`, borderRadius: 14, padding: "12px 14px", fontWeight: 700, fontSize: 14 },
+  label: { display: "block", fontSize: 12, fontWeight: 700, color: T.textSoft, marginBottom: 6 },
+  input: { width: "100%", border: `1px solid ${T.line}`, background: T.card, borderRadius: 12, padding: "12px 14px", fontSize: 14.5, color: T.text, marginBottom: 12, outline: "none" },
+  wrapRow: { display: "flex", flexWrap: "wrap", gap: 8 },
+  segmented: { display: "flex", background: T.pinkWash, borderRadius: 14, padding: 4, gap: 4 },
+  row: { display: "flex", alignItems: "center", gap: 12, background: T.card, border: `1px solid ${T.line}`, borderRadius: 16, padding: 12, marginBottom: 8 },
+  help: { fontSize: 12.5, color: T.textSoft, lineHeight: 1.5, margin: "2px 0 8px" },
+  toast: { position: "fixed", bottom: 84, left: "50%", transform: "translateX(-50%)", background: T.brownDeep, color: "#fff", padding: "11px 18px", borderRadius: 999, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 24px rgba(0,0,0,.18)", zIndex: 50, maxWidth: "90%", textAlign: "center" },
+  modalWrap: { position: "fixed", inset: 0, background: "rgba(71,55,48,.4)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 40, padding: 12 },
+  modal: { background: T.bg, borderRadius: 22, padding: 18, width: "100%", maxWidth: 440, maxHeight: "88vh", overflowY: "auto", boxShadow: "0 -10px 40px rgba(0,0,0,.2)" },
+  tryonStage: { width: "100%", aspectRatio: "3 / 4", borderRadius: 20, overflow: "hidden", background: T.pinkWash, border: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", touchAction: "none" },
+  tray: { display: "flex", gap: 10, overflowX: "auto", padding: "8px 2px 10px", background: T.cream, borderRadius: 16, border: `1px solid ${T.line}` },
+  trayItem: { flex: "0 0 auto", width: 72, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "transparent", border: "none", padding: "4px 6px" },
+  tryonOverlay: { position: "absolute", inset: 0, pointerEvents: "none" },
+  tryonChip: { position: "absolute", left: 10, display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.9)", borderRadius: 999, padding: "4px 10px 4px 4px", fontWeight: 600, boxShadow: "0 2px 8px rgba(0,0,0,.12)" },
+  tryonTag: { position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", background: "rgba(71,55,48,.78)", color: "#fff", fontSize: 11, padding: "5px 12px", borderRadius: 999, whiteSpace: "nowrap" },
+  chatScroll: { flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "6px 2px" },
+  bubble: { maxWidth: "82%", padding: "11px 14px", borderRadius: 16, fontSize: 14, lineHeight: 1.45, border: `1px solid ${T.line}`, boxShadow: "0 2px 8px rgba(206,124,139,.06)" },
+  chatInputRow: { display: "flex", gap: 8, paddingTop: 8 },
+  lookCard: { background: T.card, border: `1px solid ${T.line}`, borderRadius: 20, padding: 12, marginBottom: 12 },
+  flatlay: { display: "flex", gap: 8, overflowX: "auto", background: T.cream, border: `1px solid ${T.line}`, borderRadius: 14, padding: 8, marginTop: 4 },
+  flatItem: { flex: "0 0 auto", width: 60, height: 60, borderRadius: 12, background: T.card, border: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "center" },
+  miniLabel: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: T.textSoft, marginBottom: 4 },
+  matchBadge: { position: "absolute", top: 10, right: 10, background: "rgba(255,255,255,.92)", color: T.rose, fontWeight: 800, fontSize: 12, padding: "4px 10px", borderRadius: 999 },
+  camWrap: { position: "fixed", inset: 0, background: "#1a1416", zIndex: 60, display: "flex", flexDirection: "column" },
+  camStage: { flex: 1, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#000" },
+  camHint: { position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,.45)", color: "#fff", fontSize: 12, padding: "6px 14px", borderRadius: 999, whiteSpace: "nowrap" },
+  camBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 24px calc(22px + env(safe-area-inset-bottom))", background: "#1a1416" },
+  camSecondary: { background: "rgba(255,255,255,.14)", color: "#fff", border: "none", borderRadius: 999, padding: "10px 16px", fontWeight: 700, fontSize: 13, minWidth: 76 },
+  camShutter: { width: 74, height: 74, borderRadius: "50%", background: "transparent", border: "4px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
+  camShutterInner: { width: 56, height: 56, borderRadius: "50%", background: "#fff" },
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
